@@ -19,58 +19,58 @@
 
 ### 언제 사용하는 걸까?
 - 네이티브 피어와 연결된 객체이다. (네이티브 피어는 네이티브 메서드를 통해 기능을 위임한 네이티브 객체로 자바 객체가 아니니 GC는 그 존재를 알지 못한다. 즉 GC의 대상이 되지 못한다.)
-  - 자원의 소유자가 close 메서드를 호출하지 않는 것에 대비한 안전망 역할이다.
-    - finalize 안전망 예제
-      ```
-      public class SampleResource implements AutoCloseable {
-        private boolean closed;
+- 자원의 소유자가 close 메서드를 호출하지 않는 것에 대비한 안전망 역할이다.
+  - finalize 안전망 예제
+    ```
+    public class SampleResource implements AutoCloseable {
+      private boolean closed;
 
-        @Override
-        public void close() {
-          if (this.closed) {
-            throw new IllegalStateException();
-          }
-          closed = true;
-          System.out.println("close");
+      @Override
+      public void close() {
+        if (this.closed) {
+          throw new IllegalStateException();
         }
+        closed = true;
+        System.out.println("close");
+      }
   
-        @Override
-        protected void finalize() throws Throwable {
-          if (!this.closed) close();
-        }
+      @Override
+      protected void finalize() throws Throwable {
+        if (!this.closed) close();
       }
-      ```
-    - cleaner 안전망 예제
-      ```
-      public class SampleResource implements AutoCloseable {
-        private boolean closed;
+    }
+    ```
+  - cleaner 안전망 예제
+    ```
+    public class SampleResource implements AutoCloseable {
+      private boolean closed;
     
-        private static final Cleaner CLEANER = Cleaner.create(); // Cleaner 객체 생성
-        private final Cleaner.Cleanable cleanable; // Cleaner clean 할 때는 cleanable을 사용한다.
-        private final ResourceCleaner resourceCleaner;
+      private static final Cleaner CLEANER = Cleaner.create(); // Cleaner 객체 생성
+      private final Cleaner.Cleanable cleanable; // Cleaner clean 할 때는 cleanable을 사용한다.
+      private final ResourceCleaner resourceCleaner;
     
-        public SampleResource() {
-          this.resourceCleaner = new ResourceCleaner();
-          this.cleanable = CLEANER.register(this, resourceCleaner); // Cleaner에 클린 작업을 할 객체와 그 작업 스레드를 등록한다.
-        }
+      public SampleResource() {
+        this.resourceCleaner = new ResourceCleaner();
+        this.cleanable = CLEANER.register(this, resourceCleaner); // Cleaner에 클린 작업을 할 객체와 그 작업 스레드를 등록한다.
+      }
 
-        private static class ResourceCleaner implements Runnable { // 클린 작업을 할 별도의 스레드
-          @Override
-          public void run() {
-            System.out.println("Clean");
-          }
-        }
-      
+      private static class ResourceCleaner implements Runnable { // 클린 작업을 할 별도의 스레드
         @Override
-        public void close() {
-          if (this.closed) {
-            throw new IllegalStateException();
-          }
-          closed = true;
-          cleanable.clean();
+        public void run() {
+          System.out.println("Clean");
         }
       }
-      ```
+      
+      @Override
+      public void close() {
+        if (this.closed) {
+          throw new IllegalStateException();
+        }
+        closed = true;
+        cleanable.clean();
+      }
+    }
+    ```
 
 ### 자원을 반납하는 방법
 - 자원 반납이 필요한 클래스는 `AutoCloseable` 인터페이스를 구현하고 
@@ -103,154 +103,90 @@
   }
   ```
 
-[//]: # (### Cleaner의 동작 원리)
-
-[//]: # ()
-[//]: # (- cleaner 사용법을 다시 상기 해보자.)
-
-[//]: # (  1. `Cleaner 객체` 생성 및 초기화.)
-
-[//]: # (  2. Cleaner에 클린 작업 할 객체와 작업 스레드 &#40;ResourceCleaner&#41;를 등록.)
-
-[//]: # (  3. Cleanable 의 clean&#40;&#41; 호출)
-
-[//]: # ()
-[//]: # (#### 1. Cleaner 객체 생성 및 초기화)
-
-[//]: # (- Cleaner.create&#40;&#41;; 를 호출하면 어떤 작업이 이루어질까?)
-
-[//]: # ()
-[//]: # (```)
-
-[//]: # (public final class Cleaner {)
-
-[//]: # (  final CleanerImpl impl;)
-
-[//]: # (  ...)
-
-[//]: # (  public static Cleaner create&#40;&#41; {)
-
-[//]: # (    Cleaner cleaner = new Cleaner&#40;&#41;;)
-
-[//]: # (    cleaner.impl.start&#40;cleaner, null&#41;;              // 1)
-
-[//]: # (    return cleaner;)
-
-[//]: # (   })
-
-[//]: # (})
-
-[//]: # ()
-[//]: # (public final class CleanerImpl implements Runnable {)
-
-[//]: # (  ...)
-
-[//]: # (  public void start&#40;Cleaner cleaner, ThreadFactory threadFactory&#41; {)
-
-[//]: # (    if &#40;getCleanerImpl&#40;cleaner&#41; != this&#41; {)
-
-[//]: # (      throw new AssertionError&#40;"wrong cleaner"&#41;;)
-
-[//]: # (    })
-
-[//]: # ()
-[//]: # (    new CleanerCleanable&#40;cleaner&#41;;                  // 2)
-
-[//]: # ()
-[//]: # (    if &#40;threadFactory == null&#41; {                    // 3)
-
-[//]: # (      threadFactory = CleanerImpl.InnocuousThreadFactory.factory&#40;&#41;;)
-
-[//]: # (    })
-
-[//]: # ()
-[//]: # (    Thread thread = threadFactory.newThread&#40;this&#41;;  // 4)
-
-[//]: # (    thread.setDaemon&#40;true&#41;;)
-
-[//]: # (    thread.start&#40;&#41;;)
-
-[//]: # (  })
-
-[//]: # (  ...)
-
-[//]: # (  static final class CleanerCleanable extends PhantomCleanable<Cleaner> {)
-
-[//]: # (    CleanerCleanable&#40;Cleaner cleaner&#41; {)
-
-[//]: # (      super&#40;cleaner, cleaner&#41;;)
-
-[//]: # (    })
-
-[//]: # ()
-[//]: # (    @Override)
-
-[//]: # (    protected void performCleanup&#40;&#41; {)
-
-[//]: # (      // no action)
-
-[//]: # (    })
-
-[//]: # (  })
-
-[//]: # (})
-
-[//]: # ()
-[//]: # (```)
-
-[//]: # (1. Cleaner는 자기 자신과 threadFactory 값은 null을 인자로 CleannerImpl의 start를 호출한다.)
-
-[//]: # (2. CleanerCleanable 객체를 생성한다. 이 객체는 cleaner에 대한 작업을 나타내며 cleaner 객체가 수명을 유지할 수 있도록 한다. )
-
-[//]: # (3. threadFactory는 스레드 생성을 관리하는 팩토리 메서드이며 이를 사용하여 스레드의 동작을 조정할 수 있다.)
-
-[//]: # ()
-[//]: # ()
-[//]: # (#### Cleaner에 클린 작업 할 객체와 작업 스레드 &#40;ResourceCleaner&#41;를 등록)
-
-[//]: # (- CLEANER.register&#40;this, resourceCleaner&#41;;)
-
-[//]: # (```)
-
-[//]: # (public final class Cleaner {)
-
-[//]: # (  ...)
-
-[//]: # (  public Cleanable register&#40;Object obj, Runnable action&#41; {)
-
-[//]: # (    Objects.requireNonNull&#40;obj, "obj"&#41;;)
-
-[//]: # (    Objects.requireNonNull&#40;action, "action"&#41;;)
-
-[//]: # (    return new CleanerImpl.PhantomCleanableRef&#40;obj, this, action&#41;;)
-
-[//]: # (  })
-
-[//]: # (})
-
-[//]: # ()
-[//]: # (public final class CleanerImpl implements Runnable {)
-
-[//]: # (  ...)
-
-[//]: # (  public static final class PhantomCleanableRef extends PhantomCleanable<Object> {)
-
-[//]: # (    private final Runnable action;)
-
-[//]: # (    ...)
-
-[//]: # (    public PhantomCleanableRef&#40;Object obj, Cleaner cleaner, Runnable action&#41; {)
-
-[//]: # (      super&#40;obj, cleaner&#41;;)
-
-[//]: # (      this.action = action;)
-
-[//]: # (     })
-
-[//]: # (  })
-
-[//]: # (})
-
-[//]: # (```)
-
-[//]: # (#### Cleanable 의 clean&#40;&#41; 호출)
+### Cleaner의 동작 원리
+
+- cleaner 사용법을 다시 상기 해보자.
+  1. `Cleaner 객체` 생성 및 초기화.
+  2. Cleaner에 클린 작업 할 객체와 작업 스레드 (ResourceCleaner)를 등록.
+  3. Cleanable 의 clean() 호출
+
+#### 1. Cleaner 객체 생성 및 초기화
+- Cleaner.create(); 를 호출하면 어떤 작업이 이루어질까?
+
+```
+public final class Cleaner {
+  final CleanerImpl impl;
+  ...
+  public static Cleaner create() {
+    Cleaner cleaner = new Cleaner();
+    cleaner.impl.start(cleaner, null);              // 1
+    return cleaner;
+   }
+}
+
+public final class CleanerImpl implements Runnable {
+  ...
+  public void start(Cleaner cleaner, ThreadFactory threadFactory) {
+    if (getCleanerImpl(cleaner) != this) {
+      throw new AssertionError("wrong cleaner");
+    }
+
+    new CleanerCleanable(cleaner);                  // 2
+
+    if (threadFactory == null) {                    // 3
+      threadFactory = CleanerImpl.InnocuousThreadFactory.factory();
+    }
+
+    Thread thread = threadFactory.newThread(this);  // 4
+    thread.setDaemon(true);
+    thread.start();
+  }
+  ...
+  static final class CleanerCleanable extends PhantomCleanable<Cleaner> {
+    CleanerCleanable(Cleaner cleaner) {
+      super(cleaner, cleaner);
+    }
+
+    @Override
+    protected void performCleanup() {
+      // no action
+    }
+  }
+}
+
+```
+1. Cleaner는 자기 자신과 threadFactory 값은 null을 인자로 CleannerImpl의 start를 호출한다.
+2. CleanerCleanable 객체를 생성한다. 이 객체는 cleaner에 대한 작업을 나타내며 cleaner 객체가 수명을 유지할 수 있도록 한다. 
+3. threadFactory는 스레드 생성을 관리하는 팩토리 메서드이며 이를 사용하여 스레드의 동작을 조정할 수 있다.
+
+#### Cleaner에 클린 작업 할 객체와 작업 스레드 (ResourceCleaner)를 등록
+- CLEANER.register(this, resourceCleaner);
+```
+public final class Cleaner {
+  ...
+  public Cleanable register(Object obj, Runnable action) {
+    Objects.requireNonNull(obj, "obj");
+    Objects.requireNonNull(action, "action");
+    return new CleanerImpl.PhantomCleanableRef(obj, this, action);
+  }
+}
+
+public final class CleanerImpl implements Runnable {
+  ...
+  public static final class PhantomCleanableRef extends PhantomCleanable<Object> {
+    private final Runnable action;
+    ...
+    public PhantomCleanableRef(Object obj, Cleaner cleaner, Runnable action) {
+      super(obj, cleaner);
+      this.action = action;
+     }
+  }
+}
+```
+#### Cleanable 의 clean() 호출
+```
+public interface Cleanable {
+  void clean();
+}
+```
+- 이 부분은 동작 방식을 잘 모르겠어서 추후에 다시 봐야겠다..
